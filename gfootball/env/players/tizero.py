@@ -38,7 +38,7 @@ import numpy as np
 
 
 class Player(player_base.PlayerBase):
-  """Runs the TiZero PyTorch actor for each controlled player."""
+  """Runs the TiZero PyTorch actor for controlled players."""
 
   def __init__(self, player_config, env_config):
     player_base.PlayerBase.__init__(self, player_config)
@@ -46,6 +46,8 @@ class Player(player_base.PlayerBase):
     self._model_dir = os.path.abspath(player_config.get(
         'model_dir', os.environ.get('TIZERO_MODEL_DIR', '.deps/tizero')))
     self._deterministic = _as_bool(player_config.get('deterministic', '1'))
+    self._torch_threads = int(player_config.get(
+        'torch_threads', os.environ.get('TIZERO_TORCH_THREADS', '1')))
     self._validate_model_dir()
     self._load_modules()
     self._load_model()
@@ -83,6 +85,7 @@ class Player(player_base.PlayerBase):
           'model_dir "{}": {}'.format(self._model_dir, e))
 
     self._torch = torch
+    self._torch.set_num_threads(max(1, self._torch_threads))
     self._agent_get_action = agent_get_action
     self._policy_network = PolicyNetwork
     self._openrl_obs_deal = openrl_obs_deal
@@ -99,36 +102,42 @@ class Player(player_base.PlayerBase):
 
   def reset(self):
     self._rnn_hidden_state = [
-        np.zeros([1, 1, 1, 512], dtype=np.float32) for _ in range(11)
+        np.zeros([1, 1, 512], dtype=np.float32) for _ in range(11)
     ]
 
   def take_action(self, observations):
-    return [self._take_single_action(o) for o in observations]
+    actions = [football_action_set.action_idle] * len(observations)
+    actor_items = []
+    for index, observation in enumerate(observations):
+      active = int(observation.get('active', -1))
+      if active < 0 or active >= 11:
+        continue
+      if active == 0:
+        actions[index] = self._action_set[self._goalkeeper_action(observation)]
+      else:
+        actor_items.append((index, observation, active))
 
-  def _take_single_action(self, observation):
-    active = int(observation.get('active', -1))
-    if active < 0 or active >= 11:
-      return football_action_set.action_idle
-
-    if active == 0:
-      action = self._goalkeeper_action(observation)
-    else:
-      action = self._actor_action(observation, active)
-    return self._action_set[int(action)]
+    for index, action in self._actor_actions(actor_items):
+      actions[index] = self._action_set[action]
+    return actions
 
   def _goalkeeper_action(self, observation):
     goalkeeper_obs = copy.deepcopy(observation)
     action = self._agent_get_action(goalkeeper_obs)[0]
     return int(action)
 
-  def _actor_action(self, observation, active):
-    openrl_obs = self._openrl_obs_deal(observation)
+  def _actor_actions(self, actor_items):
+    if not actor_items:
+      return []
 
-    obs = np.concatenate(openrl_obs['obs'].reshape(1, 1, 330))
-    rnn_hidden_state = np.concatenate(self._rnn_hidden_state[active])
-    available_actions = np.zeros(20, dtype=np.float32)
-    available_actions[:19] = openrl_obs['available_action']
-    available_actions = np.concatenate(available_actions.reshape([1, 1, 20]))
+    encoded = [self._openrl_obs_deal(item[1]) for item in actor_items]
+    obs = np.stack([item['obs'] for item in encoded]).astype(np.float32)
+    rnn_hidden_state = np.concatenate([
+        self._rnn_hidden_state[item[2]] for item in actor_items
+    ], axis=0)
+    available_actions = np.zeros((len(actor_items), 20), dtype=np.float32)
+    for index, item in enumerate(encoded):
+      available_actions[index, :19] = item['available_action']
 
     with self._torch.no_grad():
       actions, rnn_hidden_state = self._model(
@@ -137,12 +146,18 @@ class Player(player_base.PlayerBase):
           available_actions=available_actions,
           deterministic=self._deterministic)
 
-    action = int(actions[0][0])
-    if action == 17 and observation['sticky_actions'][8] == 1:
-      action = 15
-    self._rnn_hidden_state[active] = np.array(
-        np.split(self._t2n(rnn_hidden_state), 1))
-    return action
+    actions = self._t2n(actions).reshape(-1)
+    rnn_hidden_state = self._t2n(rnn_hidden_state)
+    result = []
+    for batch_index, (observation_index, observation,
+                      active) in enumerate(actor_items):
+      action = int(actions[batch_index])
+      if action == 17 and observation['sticky_actions'][8] == 1:
+        action = 15
+      self._rnn_hidden_state[active] = rnn_hidden_state[batch_index:batch_index
+                                                       + 1]
+      result.append((observation_index, action))
+    return result
 
 
 def _as_bool(value):
