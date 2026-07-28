@@ -15,9 +15,9 @@
 
 """API LLM coach player.
 
-This player is an MVP coaching bridge: it asks an OpenAI-compatible chat
-completion API for low-frequency tactical plans, while every per-frame player
-action is delegated back to the built-in game AI.
+This player is a coaching bridge: it asks an OpenAI-compatible chat completion
+API for low-frequency tactical plans, pushes those plans into the built-in game
+AI's runtime tactics, and optionally overrides a few designated-player actions.
 """
 
 from __future__ import absolute_import
@@ -66,6 +66,21 @@ _ROLE_NAMES = {
     8: 'AM',
     9: 'CF',
 }
+ENGINE_TACTIC_KEYS = [
+    'position_defense_depth_factor',
+    'position_defense_microfocus_strength',
+    'position_defense_midfieldfocus',
+    'position_defense_midfieldfocus_strength',
+    'position_defense_width_factor',
+    'position_offense_depth_factor',
+    'position_offense_microfocus_strength',
+    'position_offense_midfieldfocus',
+    'position_offense_midfieldfocus_strength',
+    'position_offense_sidefocus_strength',
+    'position_offense_width_factor',
+    'dribble_centermagnet',
+    'dribble_offensiveness',
+]
 
 
 def _truthy(value):
@@ -146,6 +161,41 @@ def _coerce_plan(candidate, fallback):
   return plan
 
 
+def plan_to_engine_tactics(plan):
+  """Translates the public coach plan into gfootball engine tactic modifiers."""
+  plan = _coerce_plan(plan if isinstance(plan, dict) else {}, _DEFAULT_PLAN)
+  directness = _clamp(plan['tempo'] * 0.55 + plan['pass_risk'] * 0.45)
+  support_focus = _clamp((1.0 - plan['pass_risk']) * 0.65 +
+                         plan['tempo'] * 0.35)
+  defense_depth = _clamp(1.0 - plan['pressing'] * 0.35)
+
+  if plan['attack_focus'] in ['left', 'right']:
+    side_focus = 0.85
+    center_magnet = 0.25
+  elif plan['attack_focus'] == 'center':
+    side_focus = 0.2
+    center_magnet = 0.9
+  else:
+    side_focus = 0.45
+    center_magnet = 0.65
+
+  return {
+      'position_defense_depth_factor': defense_depth,
+      'position_defense_microfocus_strength': plan['pressing'],
+      'position_defense_midfieldfocus': plan['defensive_line'],
+      'position_defense_midfieldfocus_strength': plan['pressing'],
+      'position_defense_width_factor': plan['width'],
+      'position_offense_depth_factor': directness,
+      'position_offense_microfocus_strength': support_focus,
+      'position_offense_midfieldfocus': plan['tempo'],
+      'position_offense_midfieldfocus_strength': directness,
+      'position_offense_sidefocus_strength': side_focus,
+      'position_offense_width_factor': plan['width'],
+      'dribble_centermagnet': center_magnet,
+      'dribble_offensiveness': directness,
+  }
+
+
 class Player(player_base.PlayerBase):
   """Low-frequency LLM coach that delegates player actions to built-in AI."""
 
@@ -223,6 +273,13 @@ class Player(player_base.PlayerBase):
   def current_plan(self):
     with self._lock:
       return copy.deepcopy(self._current_plan)
+
+  def engine_tactics(self):
+    if not self._execute_plan:
+      return []
+    with self._lock:
+      current_plan = copy.deepcopy(self._current_plan)
+    return [(self._team == 'left', plan_to_engine_tactics(current_plan))]
 
   def _maybe_request_plan(self, observations):
     observation = observations[0]

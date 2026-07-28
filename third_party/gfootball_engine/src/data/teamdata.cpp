@@ -305,3 +305,13 @@ void TeamData::SetFormationEntry(int num, FormationEntry entry) {
   DO_VALIDATION;
   formation[num] = entry;
 }
+
+void TeamData::SetTactic(const std::string &name, real value) {
+  DO_VALIDATION;
+  tactics.userProperties.Set(name, clamp(value, 0.0f, 1.0f));
+}
+
+void TeamData::ProcessState(EnvState* state) {
+  DO_VALIDATION;
+  tactics.ProcessState(state);
+}

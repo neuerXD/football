@@ -134,6 +134,43 @@ class ApiLlmPlayerTest(absltest.TestCase):
 
     self.assertEqual(actions[0], football_action_set.action_bottom_right)
 
+  def test_plan_maps_to_engine_tactics(self):
+    tactics = api_llm.plan_to_engine_tactics({
+        'formation': '4-3-3',
+        'defensive_line': 0.8,
+        'pressing': 0.9,
+        'width': 0.7,
+        'attack_focus': 'center',
+        'pass_risk': 0.6,
+        'tempo': 0.4,
+    })
+
+    self.assertEqual(set(tactics), set(api_llm.ENGINE_TACTIC_KEYS))
+    self.assertAlmostEqual(tactics['position_defense_midfieldfocus'], 0.8)
+    self.assertAlmostEqual(
+        tactics['position_defense_microfocus_strength'], 0.9)
+    self.assertAlmostEqual(tactics['position_offense_width_factor'], 0.7)
+    self.assertGreater(tactics['dribble_centermagnet'], 0.8)
+    self.assertLess(tactics['position_offense_sidefocus_strength'], 0.3)
+
+  def test_player_exposes_engine_tactics(self):
+    player = self._new_player()
+    self._set_plan_without_request(
+        player, defensive_line=0.7, pressing=0.8, attack_focus='left')
+
+    engine_tactics = player.engine_tactics()
+
+    self.assertLen(engine_tactics, 1)
+    self.assertTrue(engine_tactics[0][0])
+    self.assertAlmostEqual(
+        engine_tactics[0][1]['position_defense_midfieldfocus'], 0.7)
+
+  def test_execute_plan_disabled_suppresses_engine_tactics(self):
+    os.environ['LLM_EXECUTE_PLAN'] = '0'
+    player = self._new_player()
+
+    self.assertEqual(player.engine_tactics(), [])
+
   def test_mock_plan_updates_and_logs(self):
     fd, path = tempfile.mkstemp()
     os.close(fd)

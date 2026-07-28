@@ -48,4 +48,6 @@ void MatchData::ProcessState(EnvState* state, int first_team) {
     DO_VALIDATION;
     possession60seconds = -possession60seconds;
   }
+  teamData[first_team].ProcessState(state);
+  teamData[1 - first_team].ProcessState(state);
 }

@@ -171,10 +171,11 @@ options run `python3 -m gfootball.play_game -helpfull`.
 ### Play with two API LLM coaches
 The `api_llm` player lets two OpenAI-compatible API coaches emit low-frequency
 tactical JSON. Most per-frame player actions are delegated to the built-in game
-AI, while the current plan can conservatively override designated-player
-pressing, tempo, passing risk, shooting, and attack-side movement. It requires
-`--action_set=full` or `--action_set=v2`; `full` gives the coach access to
-pressure actions.
+AI. The current plan is translated into runtime engine tactics such as team
+width, defensive line, pressing focus, attacking depth, and dribble bias; it
+can also conservatively override designated-player pressing, tempo, passing
+risk, shooting, and attack-side movement. It requires `--action_set=full` or
+`--action_set=v2`; `full` gives the coach access to pressure actions.
 
 For a local smoke test without network calls:
 `LLM_MOCK=1 python3 -m gfootball.play_game --action_set=full --players "api_llm:left_players=11,team=left;api_llm:right_players=11,team=right" --level=11_vs_11_stochastic`.
@@ -182,8 +183,8 @@ For a local smoke test without network calls:
 For real API calls, set `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL_LEFT`, and
 `LLM_MODEL_RIGHT`. Decisions are logged as JSONL to
 `/tmp/gfootball_llm_coaches.jsonl` by default, or to `LLM_LOG_PATH`. Set
-`LLM_EXECUTE_PLAN=0` to log tactical decisions without applying action
-overrides.
+`LLM_EXECUTE_PLAN=0` to log tactical decisions without applying engine tactics
+or action overrides.
 
 ### Play vs pre-trained agent
 

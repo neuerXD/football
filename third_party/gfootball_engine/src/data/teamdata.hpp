@@ -26,6 +26,7 @@
 
 struct TeamTactics {
   Properties userProperties;
+  void ProcessState(EnvState* state) { userProperties.ProcessState(state); }
 };
 
 class TeamData {
@@ -42,6 +43,8 @@ class TeamData {
     Vector3 GetColor2() const { return color2; }
 
     const TeamTactics &GetTactics() const { return tactics; }
+    void SetTactic(const std::string &name, real value);
+    void ProcessState(EnvState* state);
 
     FormationEntry GetFormationEntry(int num) const;
     void SetFormationEntry(int num, FormationEntry entry);

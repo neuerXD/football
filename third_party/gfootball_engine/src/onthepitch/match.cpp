@@ -678,6 +678,10 @@ void Match::ProcessState(EnvState* state) {
     player->ProcessState(state);
   }
   matchData->ProcessState(state, first_team);
+  if (state->Load()) {
+    teams[first_team]->GetController()->UpdateTactics();
+    teams[second_team]->GetController()->UpdateTactics();
+  }
   officials->ProcessState(state);
   {
     std::vector<HumanGamer*> human_gamers;

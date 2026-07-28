@@ -123,6 +123,28 @@ def normalize_observation(o):
 
 class FootballEnvTest(parameterized.TestCase):
 
+  def test_apply_engine_tactics_forwards_to_core(self):
+    class FakeCore(object):
+
+      def __init__(self):
+        self.calls = []
+
+      def set_tactics(self, left_team, tactics):
+        self.calls.append((left_team, tactics))
+
+    env = object.__new__(football_env.FootballEnv)
+    env._env = FakeCore()
+
+    env._apply_engine_tactics([
+        (True, {'position_offense_width_factor': 0.8}),
+        (False, {'position_defense_midfieldfocus': 0.2}),
+    ])
+
+    self.assertEqual(env._env.calls, [
+        (True, {'position_offense_width_factor': 0.8}),
+        (False, {'position_defense_midfieldfocus': 0.2}),
+    ])
+
   def compare_observations(self, l1, l2):
     for o1, o2 in zip(l1, l2):
       if 'frame' in o1 and 'frame' not in o2:
