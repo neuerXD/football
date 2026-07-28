@@ -180,6 +180,9 @@ risk, shooting, and attack-side movement. It requires `--action_set=full` or
 For a local smoke test without network calls:
 `LLM_MOCK=1 python3 -m gfootball.play_game --action_set=full --players "api_llm:left_players=11,team=left;api_llm:right_players=11,team=right" --level=11_vs_11_stochastic`.
 
+For no-render batch evaluation:
+`python3 -m gfootball.eval_llm_coaches --mock --episodes=5 --max_steps=300 --output_path=/tmp/gfootball_llm_eval.jsonl`.
+
 For real API calls, set `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL_LEFT`, and
 `LLM_MODEL_RIGHT`. Decisions are logged as JSONL to
 `/tmp/gfootball_llm_coaches.jsonl` by default, or to `LLM_LOG_PATH`. Set
