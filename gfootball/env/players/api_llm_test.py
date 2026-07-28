@@ -111,6 +111,15 @@ class ApiLlmPlayerTest(absltest.TestCase):
 
     self.assertEqual(actions[0], football_action_set.action_team_pressure)
 
+  def test_medium_pressing_keeps_builtin_ai_defense(self):
+    player = self._new_player()
+    self._set_plan_without_request(player, pressing=0.5)
+
+    observation = _observation(ball_owned_team=1)
+    actions = player.take_action([observation])
+
+    self.assertEqual(actions[0], football_action_set.action_builtin_ai)
+
   def test_low_risk_on_ball_pressure_short_passes(self):
     player = self._new_player()
     self._set_plan_without_request(player, pass_risk=0.1)

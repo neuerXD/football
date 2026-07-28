@@ -600,9 +600,6 @@ class Player(player_base.PlayerBase):
     if (plan['pressing'] >= 0.55 and
         self._has_action(football_action_set.action_pressure)):
       return football_action_set.action_pressure
-    if (plan['pressing'] >= 0.45 and
-        self._has_action(football_action_set.action_sprint)):
-      return football_action_set.action_sprint
     return football_action_set.action_builtin_ai
 
   def _loose_ball_action(self, plan, is_designated):
