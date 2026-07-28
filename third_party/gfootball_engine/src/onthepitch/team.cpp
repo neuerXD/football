@@ -140,6 +140,19 @@ void Team::SetFormationEntry(Player *player, FormationEntry entry) {
   }
 }
 
+void Team::SetFormation(const std::vector<FormationEntry> &entries) {
+  DO_VALIDATION;
+  teamData->SetFormation(entries);
+  for (int i = 0; i < (signed int)players.size() && i < (signed int)entries.size(); i++) {
+    DO_VALIDATION;
+    if (players[i]->IsActive()) {
+      players[i]->SetDynamicFormationEntry(teamData->GetFormationEntry(i));
+    }
+  }
+  teamController->CalculateDynamicRoles();
+  teamController->UpdateTactics();
+}
+
 void Team::GetActivePlayers(std::vector<Player *> &activePlayers) {
   DO_VALIDATION;
   for (auto player : players) {

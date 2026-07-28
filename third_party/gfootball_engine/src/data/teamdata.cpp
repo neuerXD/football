@@ -311,7 +311,20 @@ void TeamData::SetTactic(const std::string &name, real value) {
   tactics.userProperties.Set(name, clamp(value, 0.0f, 1.0f));
 }
 
+void TeamData::SetFormation(const std::vector<FormationEntry> &entries) {
+  DO_VALIDATION;
+  assert(entries.size() == formation.size());
+  formation = entries;
+}
+
 void TeamData::ProcessState(EnvState* state) {
   DO_VALIDATION;
+  int size = formation.size();
+  state->process(size);
+  formation.resize(size);
+  for (auto &entry : formation) {
+    DO_VALIDATION;
+    entry.ProcessState(state);
+  }
   tactics.ProcessState(state);
 }

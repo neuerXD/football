@@ -68,6 +68,7 @@ class FootballEnvCore(object):
     else:
       self._env = self._get_new_env()
     self._warned_missing_tactic_bridge = False
+    self._warned_missing_formation_bridge = False
     # Reset is needed here to make sure render() API call before reset() API
     # call works fine (get/setState makes sure env. config is the same).
     self.reset(inc=0)
@@ -396,6 +397,18 @@ class FootballEnvCore(object):
       return
     for name, value in tactics.items():
       self._env.set_tactic(bool(left_team), str(name), float(value))
+
+  def set_formation(self, left_team, entries):
+    if not entries:
+      return
+    if not hasattr(self._env, 'set_formation'):
+      if not self._warned_missing_formation_bridge:
+        logging.warning(
+            'gfootball_engine does not expose set_formation; rebuild the '
+            'engine to enable runtime coach formations.')
+        self._warned_missing_formation_bridge = True
+      return
+    self._env.set_formation(bool(left_team), entries)
 
   def get_state(self, to_pickle):
     assert (self._env.state == GameState.game_running or

@@ -142,6 +142,7 @@ class FootballEnv(gym.Env):
     left_actions = []
     right_actions = []
     engine_tactics = []
+    engine_formations = []
     left_player_position = 0
     right_player_position = 0
     for player in self._players:
@@ -161,14 +162,20 @@ class FootballEnv(gym.Env):
               a[index], self._config)
       if hasattr(player, 'engine_tactics'):
         engine_tactics.extend(player.engine_tactics())
+      if hasattr(player, 'engine_formation'):
+        engine_formations.extend(player.engine_formation())
       left_actions.extend(a[:player.num_controlled_left_players()])
       right_actions.extend(a[player.num_controlled_left_players():])
     actions = left_actions + right_actions
-    return actions, engine_tactics
+    return actions, engine_tactics, engine_formations
 
   def _apply_engine_tactics(self, engine_tactics):
     for left_team, tactics in engine_tactics:
       self._env.set_tactics(left_team, tactics)
+
+  def _apply_engine_formations(self, engine_formations):
+    for left_team, entries in engine_formations:
+      self._env.set_formation(left_team, entries)
 
   def step(self, action):
     action = self._action_to_list(action)
@@ -180,7 +187,8 @@ class FootballEnv(gym.Env):
       ) == 0, 'step() received {} actions, but no agent is playing.'.format(
           len(action))
 
-    player_actions, engine_tactics = self._get_actions()
+    player_actions, engine_tactics, engine_formations = self._get_actions()
+    self._apply_engine_formations(engine_formations)
     self._apply_engine_tactics(engine_tactics)
     _, reward, done, info = self._env.step(player_actions)
     score_reward = reward

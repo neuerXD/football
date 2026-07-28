@@ -290,6 +290,16 @@ void GameEnv::set_tactic(bool left_team, const std::string& name, float value) {
   GetTracker()->setDisabled(false);
 }
 
+void GameEnv::set_formation(bool left_team,
+                            const std::vector<FormationEntry>& entries) {
+  SetGame(this);
+  GetTracker()->setDisabled(true);
+  int team_id = left_team ? 0 : 1;
+  Match* match = context->gameTask->GetMatch();
+  match->GetTeam(team_id)->SetFormation(entries);
+  GetTracker()->setDisabled(false);
+}
+
 std::string GameEnv::get_state(const std::string& pickle) {
   ContextHolder c(this);
   EnvState reader(this, "");

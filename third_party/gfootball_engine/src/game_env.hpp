@@ -56,6 +56,7 @@ struct GameEnv {
   bool sticky_action_state(int action, bool left_team, int player);
   void action(int action, bool left_team, int player);
   void set_tactic(bool left_team, const std::string& name, float value);
+  void set_formation(bool left_team, const std::vector<FormationEntry>& entries);
   void reset(ScenarioConfig& game_config, bool init_animation);
   void render(bool swap_buffer = true);
   std::string get_state(const std::string& pickle);

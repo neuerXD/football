@@ -165,11 +165,55 @@ class ApiLlmPlayerTest(absltest.TestCase):
     self.assertAlmostEqual(
         engine_tactics[0][1]['position_defense_midfieldfocus'], 0.7)
 
+  def test_ten_zero_zero_maps_to_deep_defensive_formation(self):
+    entries = api_llm.formation_to_engine_entries('10-0-0')
+
+    self.assertLen(entries, 11)
+    self.assertEqual(entries[0].role,
+                     api_llm.libgame.e_PlayerRole.e_PlayerRole_GK)
+    self.assertEqual(entries[1].role,
+                     api_llm.libgame.e_PlayerRole.e_PlayerRole_LB)
+    self.assertEqual(entries[10].role,
+                     api_llm.libgame.e_PlayerRole.e_PlayerRole_RB)
+    for index in range(1, 11):
+      self.assertAlmostEqual(entries[index].position[0], -0.72)
+
+  def test_player_exposes_initial_engine_formation_once(self):
+    player = api_llm.Player({
+        'left_players': '11',
+        'right_players': '0',
+        'team': 'left',
+        'initial_formation': '10-0-0',
+    }, {'action_set': 'full'})
+
+    engine_formation = player.engine_formation()
+
+    self.assertLen(engine_formation, 1)
+    self.assertTrue(engine_formation[0][0])
+    self.assertLen(engine_formation[0][1], 11)
+    self.assertEqual(player.engine_formation(), [])
+
+  def test_lock_formation_keeps_initial_formation_after_plan_update(self):
+    player = api_llm.Player({
+        'left_players': '11',
+        'right_players': '0',
+        'team': 'left',
+        'initial_formation': '10-0-0',
+        'lock_formation': '1',
+        'interval_steps': '1',
+    }, {'action_set': 'full'})
+
+    player.take_action([_observation(score=(0, 1))] * 11)
+    self._wait_until_idle(player)
+
+    self.assertEqual(player.current_plan()['formation'], '10-0-0')
+
   def test_execute_plan_disabled_suppresses_engine_tactics(self):
     os.environ['LLM_EXECUTE_PLAN'] = '0'
     player = self._new_player()
 
     self.assertEqual(player.engine_tactics(), [])
+    self.assertEqual(player.engine_formation(), [])
 
   def test_mock_plan_updates_and_logs(self):
     fd, path = tempfile.mkstemp()

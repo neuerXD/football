@@ -71,6 +71,12 @@ class GameEnv_Python : public GameEnv {
     set_tactic(left_team, name, value);
   }
 
+  void set_formation_python(bool left_team,
+                            const std::vector<FormationEntry>& entries) {
+    ContextHolder c(this);
+    set_formation(left_team, entries);
+  }
+
   void reset_python(ScenarioConfig& game_config, bool init_animation) {
     ContextHolder c(this);
     context->step = -1;
@@ -144,6 +150,7 @@ BOOST_PYTHON_MODULE(_gameplayfootball) {
       .def("perform_action", &GameEnv_Python::action)
       .def("sticky_action_state", &GameEnv_Python::sticky_action_state)
       .def("set_tactic", &GameEnv_Python::set_tactic_python)
+      .def("set_formation", &GameEnv_Python::set_formation_python)
       .def("step", &GameEnv_Python::step_python)
       .def("get_state", &GameEnv_Python::get_state_python)
       .def("set_state", &GameEnv_Python::set_state_python)

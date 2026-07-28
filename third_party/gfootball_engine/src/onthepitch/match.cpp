@@ -679,7 +679,9 @@ void Match::ProcessState(EnvState* state) {
   }
   matchData->ProcessState(state, first_team);
   if (state->Load()) {
+    teams[first_team]->GetController()->CalculateDynamicRoles();
     teams[first_team]->GetController()->UpdateTactics();
+    teams[second_team]->GetController()->CalculateDynamicRoles();
     teams[second_team]->GetController()->UpdateTactics();
   }
   officials->ProcessState(state);

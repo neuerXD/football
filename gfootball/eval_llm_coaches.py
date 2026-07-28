@@ -43,6 +43,12 @@ flags.DEFINE_bool('render', False, 'Enable rendering.')
 flags.DEFINE_bool('real_time', False, 'Run with real-time throttling.')
 flags.DEFINE_string('left_model', '', 'Optional left coach model override.')
 flags.DEFINE_string('right_model', '', 'Optional right coach model override.')
+flags.DEFINE_string('left_initial_formation', '',
+                    'Optional left coach starting formation, e.g. 10-0-0.')
+flags.DEFINE_string('right_initial_formation', '',
+                    'Optional right coach starting formation, e.g. 4-3-3.')
+flags.DEFINE_bool('lock_formation', False,
+                  'Prevent API responses from changing configured formations.')
 flags.DEFINE_string(
     'coach_log_path', '',
     'Optional JSONL path for raw api_llm coach decisions.')
@@ -57,12 +63,18 @@ def _bool_flag(value):
 
 def _api_llm_player(team, model):
   side_key = 'left_players' if team == 'left' else 'right_players'
+  initial_formation = (FLAGS.left_initial_formation
+                       if team == 'left' else FLAGS.right_initial_formation)
   params = [
       '{}=11'.format(side_key),
       'team={}'.format(team),
       'interval_steps={}'.format(FLAGS.interval_steps),
       'execute_plan={}'.format(_bool_flag(FLAGS.execute_plan)),
   ]
+  if initial_formation:
+    params.append('initial_formation={}'.format(initial_formation))
+  if FLAGS.lock_formation:
+    params.append('lock_formation=1')
   if FLAGS.mock:
     params.append('mock=1')
   if model:

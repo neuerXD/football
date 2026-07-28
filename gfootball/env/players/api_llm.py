@@ -36,6 +36,7 @@ except ImportError:
   import urllib2 as urllib_request
   import urllib2 as urllib_error
 
+import gfootball_engine as libgame
 from gfootball.env import football_action_set
 from gfootball.env import player_base
 
@@ -81,6 +82,14 @@ ENGINE_TACTIC_KEYS = [
     'dribble_centermagnet',
     'dribble_offensiveness',
 ]
+_INITIAL_FORMATION_ENV = {
+    'left': 'LLM_INITIAL_FORMATION_LEFT',
+    'right': 'LLM_INITIAL_FORMATION_RIGHT',
+}
+_LOCK_FORMATION_ENV = {
+    'left': 'LLM_LOCK_FORMATION_LEFT',
+    'right': 'LLM_LOCK_FORMATION_RIGHT',
+}
 
 
 def _truthy(value):
@@ -196,6 +205,98 @@ def plan_to_engine_tactics(plan):
   }
 
 
+def _formation_counts(formation):
+  text = str(formation).strip().lower().replace(' ', '')
+  if not text:
+    return None
+  pieces = text.split('-')
+  counts = []
+  for piece in pieces:
+    if not piece.isdigit():
+      return None
+    counts.append(int(piece))
+  if not counts or sum(counts) != 10:
+    return None
+  return counts
+
+
+def _formation_name(formation):
+  counts = _formation_counts(formation)
+  if counts is None:
+    return None
+  return '-'.join(str(count) for count in counts)
+
+
+def _line_x_positions(line_count):
+  if line_count <= 1:
+    return [-0.72]
+  if line_count == 2:
+    return [-0.62, -0.12]
+  start = -0.56 if line_count == 3 else -0.62
+  end = 0.16 if line_count == 3 else 0.22
+  return [
+      start + (end - start) * idx / float(line_count - 1)
+      for idx in range(line_count)
+  ]
+
+
+def _line_y_positions(count):
+  if count <= 1:
+    return [0.0]
+  spread = min(0.36, 0.06 + 0.04 * count)
+  return [
+      -spread + 2.0 * spread * idx / float(count - 1)
+      for idx in range(count)
+  ]
+
+
+def _formation_role(line_index, line_count, slot_index, slot_count):
+  role = libgame.e_PlayerRole
+  if line_index == 0:
+    if slot_count >= 3 and slot_index == 0:
+      return role.e_PlayerRole_LB
+    if slot_count >= 3 and slot_index == slot_count - 1:
+      return role.e_PlayerRole_RB
+    return role.e_PlayerRole_CB
+  if line_index == line_count - 1:
+    if slot_count >= 3 and slot_index == 0:
+      return role.e_PlayerRole_LM
+    if slot_count >= 3 and slot_index == slot_count - 1:
+      return role.e_PlayerRole_RM
+    if slot_count >= 3 and slot_index == slot_count // 2:
+      return role.e_PlayerRole_CF
+    return role.e_PlayerRole_CF
+  if slot_count >= 3 and slot_index == 0:
+    return role.e_PlayerRole_LM
+  if slot_count >= 3 and slot_index == slot_count - 1:
+    return role.e_PlayerRole_RM
+  return role.e_PlayerRole_CM
+
+
+def formation_to_engine_entries(formation):
+  """Builds a runtime FormationEntryVec from an outfield formation string."""
+  counts = _formation_counts(formation)
+  if counts is None:
+    return None
+  populated_counts = [count for count in counts if count > 0]
+  line_count = len(populated_counts)
+  line_x = _line_x_positions(line_count)
+
+  entries = libgame.FormationEntryVec()
+  entries.append(
+      libgame.FormationEntry(-1.0, 0.0,
+                             libgame.e_PlayerRole.e_PlayerRole_GK, False,
+                             True))
+  for line_index, count in enumerate(populated_counts):
+    for slot_index, y in enumerate(_line_y_positions(count)):
+      entries.append(
+          libgame.FormationEntry(
+              line_x[line_index], y,
+              _formation_role(line_index, line_count, slot_index, count),
+              False, True))
+  return entries
+
+
 class Player(player_base.PlayerBase):
   """Low-frequency LLM coach that delegates player actions to built-in AI."""
 
@@ -244,9 +345,22 @@ class Player(player_base.PlayerBase):
     self._execute_plan = _truthy(
         player_config.get('execute_plan',
                           os.environ.get('LLM_EXECUTE_PLAN', '1')))
+    self._initial_formation = player_config.get(
+        'initial_formation',
+        os.environ.get(_INITIAL_FORMATION_ENV[self._team],
+                       os.environ.get('LLM_INITIAL_FORMATION', '')))
+    self._lock_formation = _truthy(
+        player_config.get(
+            'lock_formation',
+            os.environ.get(_LOCK_FORMATION_ENV[self._team],
+                           os.environ.get('LLM_LOCK_FORMATION', '0'))))
+    self._initial_plan = copy.deepcopy(_DEFAULT_PLAN)
+    if self._initial_formation:
+      self._initial_plan['formation'] = self._initial_formation
 
     self._lock = threading.Lock()
-    self._current_plan = copy.deepcopy(_DEFAULT_PLAN)
+    self._current_plan = copy.deepcopy(self._initial_plan)
+    self._last_engine_formation = None
     self._request_running = False
     self._last_request_step = None
     self._step = 0
@@ -254,8 +368,9 @@ class Player(player_base.PlayerBase):
   def reset(self):
     self._step = 0
     self._last_request_step = None
+    self._last_engine_formation = None
     with self._lock:
-      self._current_plan = copy.deepcopy(_DEFAULT_PLAN)
+      self._current_plan = copy.deepcopy(self._initial_plan)
 
   def take_action(self, observations):
     if observations:
@@ -280,6 +395,19 @@ class Player(player_base.PlayerBase):
     with self._lock:
       current_plan = copy.deepcopy(self._current_plan)
     return [(self._team == 'left', plan_to_engine_tactics(current_plan))]
+
+  def engine_formation(self):
+    if not self._execute_plan:
+      return []
+    with self._lock:
+      formation = _formation_name(self._current_plan.get('formation', ''))
+      if not formation or formation == self._last_engine_formation:
+        return []
+      self._last_engine_formation = formation
+    entries = formation_to_engine_entries(formation)
+    if entries is None:
+      return []
+    return [(self._team == 'left', entries)]
 
   def _maybe_request_plan(self, observations):
     observation = observations[0]
@@ -318,6 +446,8 @@ class Player(player_base.PlayerBase):
       raw_response = self._call_llm(prompt, state, current_plan)
       parsed = _extract_json_object(raw_response)
       parsed_plan = _coerce_plan(parsed, current_plan)
+      if self._lock_formation:
+        parsed_plan['formation'] = current_plan['formation']
       with self._lock:
         self._current_plan = copy.deepcopy(parsed_plan)
     except Exception as exc:  # pylint: disable=broad-except

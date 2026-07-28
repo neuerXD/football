@@ -44,6 +44,7 @@ class TeamData {
 
     const TeamTactics &GetTactics() const { return tactics; }
     void SetTactic(const std::string &name, real value);
+    void SetFormation(const std::vector<FormationEntry> &entries);
     void ProcessState(EnvState* state);
 
     FormationEntry GetFormationEntry(int num) const;
