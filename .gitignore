@@ -7,6 +7,12 @@ __pycache__
 dist/
 # virtual environment
 football-env*/
+.venv/
+
+# Local runtime dependencies and evaluation artifacts
+.deps/
+official_ai_seed*_frames/
+official_ai_seed*_topdown.avi
 
 # CMake related directories and files
 third_party/gfootball_engine/build*

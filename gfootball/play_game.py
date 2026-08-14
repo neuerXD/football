@@ -38,6 +38,8 @@ flags.DEFINE_enum('action_set', 'default', ['default', 'v2', 'full'],
 flags.DEFINE_bool('real_time', True,
                   'If true, environment will slow down so humans can play.')
 flags.DEFINE_bool('render', True, 'Whether to do game rendering.')
+flags.DEFINE_integer('game_engine_random_seed', -1,
+                     'Optional game engine random seed. Negative disables it.')
 
 
 def main(_):
@@ -52,6 +54,8 @@ def main(_):
   }
   if FLAGS.level:
     cfg_values['level'] = FLAGS.level
+  if FLAGS.game_engine_random_seed >= 0:
+    cfg_values['game_engine_random_seed'] = FLAGS.game_engine_random_seed
   cfg = config.Config(cfg_values)
   env = football_env.FootballEnv(cfg)
   if FLAGS.render:
