@@ -39,22 +39,13 @@ except ImportError:
 import gfootball_engine as libgame
 from gfootball.env import football_action_set
 from gfootball.env import player_base
+from gfootball.env import tactical_plan
 
 
 _LOG_LOCK = threading.Lock()
 
-_DEFAULT_PLAN = {
-    'formation': '4-4-2',
-    'defensive_line': 0.5,
-    'pressing': 0.5,
-    'width': 0.5,
-    'attack_focus': 'balanced',
-    'pass_risk': 0.35,
-    'tempo': 0.5,
-    'notes': 'Initial balanced plan.'
-}
-
-_ATTACK_FOCUS = set(['left', 'center', 'right', 'balanced'])
+_DEFAULT_PLAN = tactical_plan.DEFAULT_PLAN
+_ATTACK_FOCUS = tactical_plan.ATTACK_FOCUS
 _ROLE_NAMES = {
     0: 'GK',
     1: 'CB',
@@ -67,21 +58,7 @@ _ROLE_NAMES = {
     8: 'AM',
     9: 'CF',
 }
-ENGINE_TACTIC_KEYS = [
-    'position_defense_depth_factor',
-    'position_defense_microfocus_strength',
-    'position_defense_midfieldfocus',
-    'position_defense_midfieldfocus_strength',
-    'position_defense_width_factor',
-    'position_offense_depth_factor',
-    'position_offense_microfocus_strength',
-    'position_offense_midfieldfocus',
-    'position_offense_midfieldfocus_strength',
-    'position_offense_sidefocus_strength',
-    'position_offense_width_factor',
-    'dribble_centermagnet',
-    'dribble_offensiveness',
-]
+ENGINE_TACTIC_KEYS = tactical_plan.ENGINE_TACTIC_KEYS
 _INITIAL_FORMATION_ENV = {
     'left': 'LLM_INITIAL_FORMATION_LEFT',
     'right': 'LLM_INITIAL_FORMATION_RIGHT',
@@ -111,7 +88,7 @@ def _int(value, default):
 
 
 def _clamp(value, low=0.0, high=1.0):
-  return max(low, min(high, value))
+  return tactical_plan.clamp(value, low, high)
 
 
 def _jsonable(value):
@@ -152,79 +129,20 @@ def _extract_json_object(text):
 
 
 def _coerce_plan(candidate, fallback):
-  if not isinstance(candidate, dict):
-    raise ValueError('LLM response is not a JSON object')
-
-  plan = copy.deepcopy(fallback or _DEFAULT_PLAN)
-  plan['formation'] = str(candidate.get('formation', plan['formation']))[:32]
-  for key in [
-      'defensive_line', 'pressing', 'width', 'pass_risk', 'tempo'
-  ]:
-    plan[key] = _clamp(_float(candidate.get(key, plan[key]), plan[key]))
-
-  attack_focus = str(candidate.get('attack_focus',
-                                   plan['attack_focus'])).lower()
-  plan['attack_focus'] = attack_focus if attack_focus in _ATTACK_FOCUS else (
-      plan['attack_focus'])
-  plan['notes'] = str(candidate.get('notes', plan['notes']))[:500]
-  return plan
+  return tactical_plan.coerce_plan(candidate, fallback)
 
 
 def plan_to_engine_tactics(plan):
   """Translates the public coach plan into gfootball engine tactic modifiers."""
-  plan = _coerce_plan(plan if isinstance(plan, dict) else {}, _DEFAULT_PLAN)
-  directness = _clamp(plan['tempo'] * 0.55 + plan['pass_risk'] * 0.45)
-  support_focus = _clamp((1.0 - plan['pass_risk']) * 0.65 +
-                         plan['tempo'] * 0.35)
-  defense_depth = _clamp(1.0 - plan['pressing'] * 0.35)
-
-  if plan['attack_focus'] in ['left', 'right']:
-    side_focus = 0.85
-    center_magnet = 0.25
-  elif plan['attack_focus'] == 'center':
-    side_focus = 0.2
-    center_magnet = 0.9
-  else:
-    side_focus = 0.45
-    center_magnet = 0.65
-
-  return {
-      'position_defense_depth_factor': defense_depth,
-      'position_defense_microfocus_strength': plan['pressing'],
-      'position_defense_midfieldfocus': plan['defensive_line'],
-      'position_defense_midfieldfocus_strength': plan['pressing'],
-      'position_defense_width_factor': plan['width'],
-      'position_offense_depth_factor': directness,
-      'position_offense_microfocus_strength': support_focus,
-      'position_offense_midfieldfocus': plan['tempo'],
-      'position_offense_midfieldfocus_strength': directness,
-      'position_offense_sidefocus_strength': side_focus,
-      'position_offense_width_factor': plan['width'],
-      'dribble_centermagnet': center_magnet,
-      'dribble_offensiveness': directness,
-  }
+  return tactical_plan.plan_to_engine_tactics(plan)
 
 
 def _formation_counts(formation):
-  text = str(formation).strip().lower().replace(' ', '')
-  if not text:
-    return None
-  pieces = text.split('-')
-  counts = []
-  for piece in pieces:
-    if not piece.isdigit():
-      return None
-    counts.append(int(piece))
-  if not counts or sum(counts) != 10:
-    return None
-  return counts
+  return tactical_plan.formation_counts(formation)
 
 
 def _formation_name(formation):
-  counts = _formation_counts(formation)
-  if counts is None:
-    return None
-  return '-'.join(str(count) for count in counts)
+  return tactical_plan.formation_name(formation)
 
 
 def _line_x_positions(line_count):
@@ -275,26 +193,7 @@ def _formation_role(line_index, line_count, slot_index, slot_count):
 
 def formation_to_engine_entries(formation):
   """Builds a runtime FormationEntryVec from an outfield formation string."""
-  counts = _formation_counts(formation)
-  if counts is None:
-    return None
-  populated_counts = [count for count in counts if count > 0]
-  line_count = len(populated_counts)
-  line_x = _line_x_positions(line_count)
-
-  entries = libgame.FormationEntryVec()
-  entries.append(
-      libgame.FormationEntry(-1.0, 0.0,
-                             libgame.e_PlayerRole.e_PlayerRole_GK, False,
-                             True))
-  for line_index, count in enumerate(populated_counts):
-    for slot_index, y in enumerate(_line_y_positions(count)):
-      entries.append(
-          libgame.FormationEntry(
-              line_x[line_index], y,
-              _formation_role(line_index, line_count, slot_index, count),
-              False, True))
-  return entries
+  return tactical_plan.formation_to_engine_entries(formation)
 
 
 class Player(player_base.PlayerBase):

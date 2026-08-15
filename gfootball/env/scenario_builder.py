@@ -119,5 +119,9 @@ class Scenario(object):
   def EpisodeNumber(self):
     return self._config['episode_number']
 
+  def GetConfigValue(self, name, default=None):
+    """Returns an optional top-level environment value to custom scenarios."""
+    return self._config[name] if name in self._config else default
+
   def ScenarioConfig(self):
     return self._scenario_cfg

@@ -28,6 +28,7 @@ from gfootball.env import constants
 from gfootball.env import football_action_set
 from gfootball.env import football_env_core
 from gfootball.env import observation_rotation
+from gfootball.env import tactical_plan
 import gym
 import numpy as np
 
@@ -46,6 +47,7 @@ class FootballEnv(gym.Env):
     self._agent_right_position = -1
     self._players = self._construct_players(config['players'], player_config)
     self._env = football_env_core.FootballEnvCore(self._config)
+    self._tactical_executor = tactical_plan.TacticalPlanExecutor(self._env)
     self._num_actions = len(football_action_set.get_action_set(self._config))
     self._cached_observation = None
 
@@ -201,10 +203,15 @@ class FootballEnv(gym.Env):
 
   def reset(self):
     self._env.reset()
+    self._tactical_executor.reset()
     for player in self._players:
       player.reset()
     self._cached_observation = None
     return self.observation()
+
+  def set_team_plan(self, left_team, plan):
+    """Synchronously applies a high-level plan to one built-in AI team."""
+    return self._tactical_executor.set_team_plan(left_team, plan)
 
   def observation(self):
     if not self._cached_observation:
