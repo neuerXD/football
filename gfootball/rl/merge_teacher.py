@@ -10,6 +10,39 @@ import os
 import numpy as np
 
 
+def _audit(labels, confidence, valid_samples, manifests):
+  accepted = labels >= 0
+  rejected = ~accepted
+  no_valid_response = rejected & (valid_samples == 0)
+  no_majority = rejected & (valid_samples > 0) & (confidence <= 0.0)
+  low_confidence = rejected & (confidence > 0.0)
+  sample_counts = {
+      int(manifest['num_samples']) for manifest in manifests
+      if 'num_samples' in manifest
+  }
+  num_samples = sample_counts.pop() if len(sample_counts) == 1 else None
+  format_failures = None
+  format_failure_rate = None
+  if num_samples is not None:
+    total_samples = int(len(labels) * num_samples)
+    format_failures = int(total_samples - np.sum(valid_samples))
+    format_failure_rate = float(format_failures / float(total_samples))
+  accepted_confidence = confidence[accepted]
+  return {
+      'class_counts': np.bincount(
+          labels[accepted], minlength=12).astype(int).tolist(),
+      'mean_accepted_confidence': (
+          float(np.mean(accepted_confidence))
+          if len(accepted_confidence) else None),
+      'format_failures': format_failures,
+      'format_failure_rate': format_failure_rate,
+      'no_valid_response': int(np.sum(no_valid_response)),
+      'no_majority': int(np.sum(no_majority)),
+      'low_confidence': int(np.sum(low_confidence)),
+      'low_confidence_rate': float(np.mean(low_confidence)),
+  }
+
+
 def merge_shards(shard_dirs, output_dir):
   if not shard_dirs:
     raise ValueError('At least one shard directory is required')
@@ -48,7 +81,13 @@ def merge_shards(shard_dirs, output_dir):
     confidence[indices] = shard['confidence']
     valid_samples[indices] = shard['valid_samples']
     with open(os.path.join(shard['dir'], 'teacher_labels.jsonl')) as f:
-      records.extend(json.loads(line) for line in f if line.strip())
+      shard_records = [json.loads(line) for line in f if line.strip()]
+    record_indices = [int(item['cluster_index']) for item in shard_records]
+    if (len(record_indices) != len(indices) or
+        len(set(record_indices)) != len(record_indices) or
+        set(record_indices) != set(indices.tolist())):
+      raise ValueError('Teacher shard JSONL does not match its NPZ indices')
+    records.extend(shard_records)
   if not np.all(covered):
     missing = np.flatnonzero(~covered)
     raise ValueError('Teacher shards miss {} clusters'.format(len(missing)))
@@ -70,6 +109,7 @@ def merge_shards(shard_dirs, output_dir):
       'clusters': total,
       'accepted': int(np.sum(labels >= 0)),
       'acceptance_rate': float(np.mean(labels >= 0)),
+      'audit': _audit(labels, confidence, valid_samples, manifests),
       'num_shards': len(shards),
       'source_dirs': [os.path.abspath(path) for path in shard_dirs],
       'source_manifests': manifests,

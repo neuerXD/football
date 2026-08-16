@@ -81,6 +81,10 @@ python -m gfootball.rl.merge_teacher \
   --output-dir artifacts/teacher/qwen14b/merged
 ```
 
+The merged manifest audits accepted class counts, parsed-response failures,
+missing majorities, and low-confidence filtering in addition to verifying that
+the shard NPZ and JSONL indices cover every cluster exactly once.
+
 ## BC and PPO
 
 Train weighted behavior cloning, then compare scratch and BC-initialized PPO.
