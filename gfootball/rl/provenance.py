@@ -23,7 +23,9 @@ def _git(args, cwd):
 
 def experiment_metadata(repo_dir=None):
   """Returns JSON-serializable code, runtime, and accelerator metadata."""
-  repo_dir = os.path.abspath(repo_dir or os.getcwd())
+  if repo_dir is None:
+    repo_dir = os.path.join(os.path.dirname(__file__), '..', '..')
+  repo_dir = os.path.abspath(repo_dir)
   status = _git(['status', '--porcelain'], repo_dir)
   result = {
       'created_at_utc': datetime.datetime.now(

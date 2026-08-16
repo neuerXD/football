@@ -36,15 +36,24 @@ def cluster(input_dir, output_dir, num_clusters=3000, seed=23):
   )
   labels = model.fit_predict(standardized)
   representatives = []
+  selected = set()
   for cluster_id in range(num_clusters):
     indices = np.flatnonzero(labels == cluster_id)
     if len(indices) == 0:
-      representatives.append(0)
-      continue
-    distances = np.sum(np.square(standardized[indices] -
-                                 model.cluster_centers_[cluster_id]), axis=1)
-    representatives.append(int(indices[np.argmin(distances)]))
+      indices = np.arange(len(states))
+    distances = np.sum(np.square(
+        standardized[indices] - model.cluster_centers_[cluster_id]), axis=1)
+    for offset in np.argsort(distances):
+      candidate = int(indices[offset])
+      if candidate not in selected:
+        representatives.append(candidate)
+        selected.add(candidate)
+        break
+    else:
+      raise RuntimeError('Could not select a unique cluster representative')
   representatives = np.asarray(representatives, dtype=np.int64)
+  if len(np.unique(representatives)) != num_clusters:
+    raise AssertionError('Cluster representatives must be unique')
   np.savez_compressed(
       os.path.join(output_dir, 'clusters.npz'),
       centers=model.cluster_centers_.astype(np.float32),
@@ -60,6 +69,8 @@ def cluster(input_dir, output_dir, num_clusters=3000, seed=23):
       'num_clusters': int(num_clusters),
       'cluster_seed': seed,
       'feature_dim': int(states.shape[1]),
+      'empty_clusters': int(np.sum(
+          np.bincount(labels, minlength=num_clusters) == 0)),
       'provenance': provenance.experiment_metadata(),
   }
   with open(os.path.join(output_dir, 'cluster_manifest.json'), 'w') as f:
