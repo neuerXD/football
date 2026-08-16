@@ -113,8 +113,9 @@ Repeat PPO with seeds `22` and `33`. Run the core ablations with
 `--no-curriculum` and `--no-potential`. Every run writes a JSON manifest,
 JSONL learning log, periodic checkpoints, RNG state, and final checkpoint.
 
-On the `/data` training host, queue the formal teacher merge, BC run,
-three-seed BC+PPO run, and three-seed curriculum/potential ablations with:
+On the `/data` training host, queue or resume the formal teacher merge, BC run,
+three-seed scratch/BC+PPO runs, and three-seed curriculum/potential ablations
+with:
 
 ```bash
 PROJECT_ROOT=/data/zx/football \

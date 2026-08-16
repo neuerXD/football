@@ -105,6 +105,9 @@ wait_for_capacity() {
 
 declare -a job_outputs=()
 jobs=(
+  "scratch_ppo 11"
+  "scratch_ppo 22"
+  "scratch_ppo 33"
   "bc_ppo 11"
   "bc_ppo 22"
   "bc_ppo 33"
@@ -133,19 +136,31 @@ for specification in "${jobs[@]}"; do
   mkdir -p "$output_dir"
   extra_args=()
   case "$experiment" in
-    bc_ppo) ;;
-    ablation_no_curriculum) extra_args+=(--no-curriculum) ;;
-    ablation_no_potential) extra_args+=(--no-potential) ;;
+    scratch_ppo) ;;
+    bc_ppo) extra_args+=(--bc-checkpoint "$bc_dir/bc_checkpoint.pt") ;;
+    ablation_no_curriculum)
+      extra_args+=(
+        --bc-checkpoint "$bc_dir/bc_checkpoint.pt" --no-curriculum)
+      ;;
+    ablation_no_potential)
+      extra_args+=(
+        --bc-checkpoint "$bc_dir/bc_checkpoint.pt" --no-potential)
+      ;;
     *) echo "unknown experiment $experiment" >&2; exit 2 ;;
   esac
+  latest_checkpoint="$(find "$output_dir" -maxdepth 1 \
+    -name 'checkpoint_*.pt' -type f | sort | tail -n 1)"
+  if [[ -n "$latest_checkpoint" ]]; then
+    echo "resuming $experiment seed $seed from $latest_checkpoint"
+    extra_args+=(--resume "$latest_checkpoint")
+  fi
   gpu=$((job_index % 2))
   echo "$(date --iso-8601=seconds) starting $experiment seed $seed on GPU $gpu"
   CUDA_VISIBLE_DEVICES="$gpu" python -m gfootball.rl.ppo \
     --output-dir "$output_dir" \
     --total-steps 250000 --num-envs "$envs_per_run" --rollout-steps 256 \
     --optimization-seed "$seed" --checkpoint-interval 25000 \
-    --device cuda --start-method spawn \
-    --bc-checkpoint "$bc_dir/bc_checkpoint.pt" "${extra_args[@]}" \
+    --device cuda --start-method spawn "${extra_args[@]}" \
     > "$output_dir/train.log" 2>&1 &
   pid=$!
   echo "$pid" > "$output_dir/train.pid"
