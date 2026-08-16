@@ -23,6 +23,7 @@ def train_bc(cluster_dir, teacher_dir, output_dir, epochs=50, batch_size=256,
             learning_rate=3e-4, seed=41, device=None):
   output_dir = os.path.abspath(output_dir)
   os.makedirs(output_dir, exist_ok=True)
+  run_provenance = provenance.experiment_metadata()
   cluster = np.load(os.path.join(cluster_dir, 'clusters.npz'))
   teacher = np.load(os.path.join(teacher_dir, 'teacher_labels.npz'))
   states = np.asarray(cluster['representative_states'], dtype=np.float32)
@@ -113,7 +114,7 @@ def train_bc(cluster_dir, teacher_dir, output_dir, epochs=50, batch_size=256,
       'val_size': int(len(val_indices)),
       'test_size': int(len(test_indices)),
       'final': history[-1],
-      'provenance': provenance.experiment_metadata(),
+      'provenance': run_provenance,
   }
   with open(os.path.join(output_dir, 'bc_metrics.json'), 'w') as f:
     json.dump(metrics, f, indent=2, sort_keys=True)

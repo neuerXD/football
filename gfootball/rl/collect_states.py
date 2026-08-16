@@ -60,6 +60,7 @@ def collect(output_dir, num_states=50000, num_envs=8, seed=17,
             progress_interval=1000):
   output_dir = os.path.abspath(output_dir)
   os.makedirs(output_dir, exist_ok=True)
+  run_provenance = provenance.experiment_metadata()
   rng = np.random.RandomState(seed)
   env_kwargs = [{
       'seed': protocol.TRAIN_ENV_SEEDS[index],
@@ -67,7 +68,6 @@ def collect(output_dir, num_states=50000, num_envs=8, seed=17,
       'control_left': True,
       'opponent_difficulty': 0.4,
       'macro_steps': macro_steps,
-      'provenance': provenance.experiment_metadata(),
       'game_duration': 3600,
       'use_potential_shaping': True,
   } for index in range(num_envs)]
@@ -139,6 +139,7 @@ def collect(output_dir, num_states=50000, num_envs=8, seed=17,
       'action_dim': 12,
       'num_envs': num_envs,
       'macro_steps': macro_steps,
+      'provenance': run_provenance,
   }
   with open(os.path.join(output_dir, 'collection_manifest.json'), 'w') as f:
     json.dump(manifest, f, indent=2, sort_keys=True)

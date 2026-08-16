@@ -321,6 +321,7 @@ def evaluate(policy, policy_name, output_dir, scenarios, num_envs=8,
     raise ValueError('At least one evaluation scenario is required')
   output_dir = os.path.abspath(output_dir)
   os.makedirs(output_dir, exist_ok=True)
+  run_provenance = provenance.experiment_metadata()
   num_envs = min(int(num_envs), len(scenarios))
   queue = list(scenarios)
   initial = [queue.pop(0) for _ in range(num_envs)]
@@ -412,7 +413,7 @@ def evaluate(policy, policy_name, output_dir, scenarios, num_envs=8,
       'seed_split': 'eval',
       'summary': _summary(records),
       'tactic_names': list(tactics.TACTIC_NAMES),
-      'provenance': provenance.experiment_metadata(),
+      'provenance': run_provenance,
   }
   with open(os.path.join(output_dir, 'evaluation_manifest.json'), 'w') as f:
     json.dump(manifest, f, indent=2, sort_keys=True)

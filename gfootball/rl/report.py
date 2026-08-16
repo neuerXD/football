@@ -251,6 +251,7 @@ def generate_report(eval_dirs, output_dir, reference='', target_win_rate=None,
                     bootstrap_samples=10000, seed=71):
   output_dir = os.path.abspath(output_dir)
   os.makedirs(output_dir, exist_ok=True)
+  run_provenance = provenance.experiment_metadata()
   grouped, manifests = _group_runs(eval_dirs)
   final_records = _final_records(grouped)
   summaries = {
@@ -293,7 +294,7 @@ def generate_report(eval_dirs, output_dir, reference='', target_win_rate=None,
       'sample_efficiency_curves': curves,
       'steps_to_target_win_rate': efficiency,
       'source_manifests': manifests,
-      'provenance': provenance.experiment_metadata(),
+      'provenance': run_provenance,
   }
   with open(os.path.join(output_dir, 'report.json'), 'w') as f:
     json.dump(result, f, indent=2, sort_keys=True)

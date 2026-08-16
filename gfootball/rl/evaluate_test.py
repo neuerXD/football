@@ -1,6 +1,8 @@
 # coding=utf-8
 """Tests for macro-policy evaluation helpers."""
 
+import json
+
 import numpy as np
 import torch
 
@@ -52,3 +54,44 @@ def test_checkpoint_policy_loads_ppo(tmp_path):
   assert len(actions) == 2
   assert policy.global_step == 123
   assert policy.optimization_seed == 11
+
+
+def test_evaluate_freezes_provenance_at_start(tmp_path, monkeypatch):
+  calls = []
+
+  class FakeVecEnv(object):
+
+    def __init__(self, unused_kwargs, unused_start_method):
+      pass
+
+    def reset(self, unused_configs):
+      return [np.zeros(features.FEATURE_DIM, dtype=np.float32)]
+
+    def step(self, unused_actions):
+      info = {
+          'score_diff': 1,
+          'score': [1, 0],
+          'low_level_steps': 100,
+          'engine_step_latency_ms': 1.0,
+      }
+      observation = np.zeros(features.FEATURE_DIM, dtype=np.float32)
+      return [(observation, 1.0, True, info)]
+
+    def close(self):
+      pass
+
+  def metadata():
+    calls.append(True)
+    return {'git_commit': 'start-commit'}
+
+  monkeypatch.setattr(
+      evaluate.vector_env, 'SubprocessMacroVecEnv', FakeVecEnv)
+  monkeypatch.setattr(evaluate.provenance, 'experiment_metadata', metadata)
+  scenario = evaluate.make_scenarios((20000,), (0.6,))[0]
+  result = evaluate.evaluate(
+      evaluate.FixedPolicy(), 'fixed', str(tmp_path), [scenario], num_envs=1)
+  with open(tmp_path / 'evaluation_manifest.json') as source:
+    written = json.load(source)
+  assert len(calls) == 1
+  assert result['provenance'] == {'git_commit': 'start-commit'}
+  assert written['provenance'] == {'git_commit': 'start-commit'}

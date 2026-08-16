@@ -17,6 +17,7 @@ def cluster(input_dir, output_dir, num_clusters=3000, seed=23):
   input_dir = os.path.abspath(input_dir)
   output_dir = os.path.abspath(output_dir)
   os.makedirs(output_dir, exist_ok=True)
+  run_provenance = provenance.experiment_metadata()
   dataset = np.load(os.path.join(input_dir, 'states.npz'))
   states = np.asarray(dataset['states'], dtype=np.float32)
   if len(states) == 0:
@@ -71,7 +72,7 @@ def cluster(input_dir, output_dir, num_clusters=3000, seed=23):
       'feature_dim': int(states.shape[1]),
       'empty_clusters': int(np.sum(
           np.bincount(labels, minlength=num_clusters) == 0)),
-      'provenance': provenance.experiment_metadata(),
+      'provenance': run_provenance,
   }
   with open(os.path.join(output_dir, 'cluster_manifest.json'), 'w') as f:
     json.dump(manifest, f, indent=2, sort_keys=True)

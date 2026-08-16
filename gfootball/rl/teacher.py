@@ -141,6 +141,7 @@ def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
 
   output_dir = os.path.abspath(output_dir)
   os.makedirs(output_dir, exist_ok=True)
+  run_provenance = provenance.experiment_metadata()
   cluster_data = np.load(os.path.join(cluster_dir, 'clusters.npz'))
   all_states = cluster_data['representative_states']
   shard_index = int(shard_index)
@@ -264,7 +265,7 @@ def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
       'seed': seed,
       'shard_index': shard_index,
       'num_shards': num_shards,
-      'provenance': provenance.experiment_metadata(),
+      'provenance': run_provenance,
   }
   with open(os.path.join(output_dir, 'teacher_manifest.json'), 'w') as f:
     json.dump(manifest, f, indent=2, sort_keys=True)

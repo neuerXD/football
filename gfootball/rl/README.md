@@ -113,6 +113,19 @@ Repeat PPO with seeds `22` and `33`. Run the core ablations with
 `--no-curriculum` and `--no-potential`. Every run writes a JSON manifest,
 JSONL learning log, periodic checkpoints, RNG state, and final checkpoint.
 
+On the `/data` training host, queue the formal teacher merge, BC run,
+three-seed BC+PPO run, and three-seed curriculum/potential ablations with:
+
+```bash
+PROJECT_ROOT=/data/zx/football \
+  nohup bash scripts/run_formal_training.sh \
+  > artifacts/orchestration/formal_training.log 2>&1 &
+```
+
+The launcher accounts for active PPO and evaluation processes and keeps at
+most 56 GRF environment workers active by default. Override this only with an
+explicit `MAX_ENV_WORKERS` after checking host capacity.
+
 ## Evaluation
 
 The evaluator supports `fixed`, `random`, `rule`, `llm`, and `checkpoint`
@@ -146,3 +159,14 @@ python -m gfootball.rl.report \
 
 The report contains W/D/L, win rate, mean goal difference, paired 95% CIs,
 steps to a shared target win rate, tactic distribution, and decision latency.
+
+After `scripts/run_formal_training.sh` has been queued, the full held-out
+evaluation can also wait in the background. It includes intermediate
+scratch/BC+PPO checkpoints, final ablations, zero-shot Qwen, TiZero, and both
+reports:
+
+```bash
+PROJECT_ROOT=/data/zx/football \
+  nohup bash scripts/run_formal_evaluation.sh \
+  > artifacts/orchestration/formal_evaluation.log 2>&1 &
+```
