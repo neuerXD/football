@@ -12,6 +12,8 @@ football-env*/
 # Local runtime dependencies and evaluation artifacts
 .deps/
 artifacts/
+/gfootball_engine
+/third_party/gfootball_engine/fonts/
 official_ai_seed*_frames/
 official_ai_seed*_topdown.avi
 
