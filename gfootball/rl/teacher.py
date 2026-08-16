@@ -11,6 +11,7 @@ import re
 import numpy as np
 
 from gfootball.rl import tactics
+from gfootball.rl import provenance
 
 
 def build_prompt(state):
@@ -58,6 +59,9 @@ def majority_vote(responses, confidence_threshold=0.55):
                        minlength=tactics.NUM_TACTICS)
   action_id = int(np.argmax(counts))
   winners = [item for item in valid if item['action_id'] == action_id]
+  required_votes = len(responses) // 2 + 1
+  if len(winners) < required_votes:
+    return -1, 0.0, '', len(valid)
   confidence = float(np.mean([item['confidence'] for item in winners]))
   reason = winners[0]['reason'] if winners else ''
   label = action_id if confidence >= confidence_threshold else -1
@@ -91,6 +95,11 @@ def _load_model(model_path, quantization):
 
 def _generate_batch(tokenizer, model, prompts, temperature, max_new_tokens):
   import torch
+  if hasattr(tokenizer, 'apply_chat_template') and tokenizer.chat_template:
+    prompts = [tokenizer.apply_chat_template(
+        [{'role': 'user', 'content': prompt}],
+        tokenize=False,
+        add_generation_prompt=True) for prompt in prompts]
   encoded = tokenizer(prompts, return_tensors='pt', padding=True,
                       truncation=True, max_length=2048)
   device = next(model.parameters()).device
@@ -112,13 +121,21 @@ def _generate_batch(tokenizer, model, prompts, temperature, max_new_tokens):
 def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
                    num_samples=3, batch_size=4, seed=31,
                    confidence_threshold=0.55, temperature=0.7,
-                   max_new_tokens=96, mock=False):
+                   max_new_tokens=96, mock=False, shard_index=0,
+                   num_shards=1):
   from gfootball.rl.collect_states import rule_action
 
   output_dir = os.path.abspath(output_dir)
   os.makedirs(output_dir, exist_ok=True)
   cluster_data = np.load(os.path.join(cluster_dir, 'clusters.npz'))
-  states = cluster_data['representative_states']
+  all_states = cluster_data['representative_states']
+  shard_index = int(shard_index)
+  num_shards = int(num_shards)
+  if num_shards < 1 or not 0 <= shard_index < num_shards:
+    raise ValueError('Invalid shard {}/{}'.format(shard_index, num_shards))
+  cluster_indices = np.arange(
+      shard_index, len(all_states), num_shards, dtype=np.int64)
+  states = all_states[cluster_indices]
   rng = np.random.RandomState(seed)
   tokenizer = model = None
   if not mock:
@@ -149,7 +166,7 @@ def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
         })
     else:
       import torch
-      torch.manual_seed(seed + start)
+      torch.manual_seed(seed + shard_index * 100000 + start)
       raw_responses = _generate_batch(tokenizer, model, prompts, temperature,
                                       max_new_tokens)
       responses = []
@@ -169,7 +186,7 @@ def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
       confidences[index] = confidence
       valid_counts[index] = valid
       records.append({
-          'cluster_index': index,
+          'cluster_index': int(cluster_indices[index]),
           'action_id': int(label),
           'confidence': confidence,
           'valid_samples': valid,
@@ -182,19 +199,24 @@ def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
       labels=labels,
       confidence=confidences,
       valid_samples=valid_counts,
+      cluster_indices=cluster_indices,
   )
   with open(os.path.join(output_dir, 'teacher_labels.jsonl'), 'w') as output:
     for record in records:
       output.write(json.dumps(record, sort_keys=True))
       output.write('\n')
   manifest = {
-      'clusters': int(len(states)),
+      'clusters': int(len(all_states)),
+      'shard_clusters': int(len(states)),
       'accepted': int(np.sum(labels >= 0)),
       'acceptance_rate': float(np.mean(labels >= 0)),
       'num_samples': num_samples,
       'confidence_threshold': confidence_threshold,
       'model_path': model_path or 'mock-rule-teacher',
       'seed': seed,
+      'shard_index': shard_index,
+      'num_shards': num_shards,
+      'provenance': provenance.experiment_metadata(),
   }
   with open(os.path.join(output_dir, 'teacher_manifest.json'), 'w') as f:
     json.dump(manifest, f, indent=2, sort_keys=True)
@@ -214,6 +236,8 @@ def main():
   parser.add_argument('--temperature', type=float, default=0.7)
   parser.add_argument('--max-new-tokens', type=int, default=96)
   parser.add_argument('--mock', action='store_true')
+  parser.add_argument('--shard-index', type=int, default=0)
+  parser.add_argument('--num-shards', type=int, default=1)
   args = parser.parse_args()
   print(label_clusters(**vars(args)), flush=True)
 

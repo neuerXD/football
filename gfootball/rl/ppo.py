@@ -14,6 +14,7 @@ from torch.nn import functional as F
 
 from gfootball.rl import features
 from gfootball.rl import models
+from gfootball.rl import provenance
 from gfootball.rl import protocol
 from gfootball.rl import vector_env
 
@@ -104,6 +105,34 @@ class PPOTrainer(object):
     if resume:
       self._load_checkpoint(resume)
 
+    self.run_config = {
+        'total_steps': self.total_steps,
+        'num_envs': self.num_envs,
+        'rollout_steps': self.rollout_steps,
+        'optimization_seed': self.optimization_seed,
+        'learning_rate': self.learning_rate,
+        'gamma': self.gamma,
+        'gae_lambda': self.gae_lambda,
+        'clip_coef': self.clip_coef,
+        'entropy_coef': self.entropy_coef,
+        'value_coef': self.value_coef,
+        'max_grad_norm': self.max_grad_norm,
+        'update_epochs': self.update_epochs,
+        'minibatch_size': self.minibatch_size,
+        'checkpoint_interval': self.checkpoint_interval,
+        'device': str(self.device),
+        'bc_checkpoint': os.path.abspath(bc_checkpoint) if bc_checkpoint else '',
+        'resume': os.path.abspath(resume) if resume else '',
+        'no_curriculum': self.no_curriculum,
+        'no_potential': self.no_potential,
+        'start_method': start_method,
+    }
+    with open(os.path.join(self.output_dir, 'run_manifest.json'), 'w') as f:
+      json.dump({
+          'config': self.run_config,
+          'provenance': provenance.experiment_metadata(),
+      }, f, indent=2, sort_keys=True)
+
     env_kwargs = [{
         'seed': protocol.TRAIN_ENV_SEEDS[index],
         'split': 'train',
@@ -118,9 +147,17 @@ class PPOTrainer(object):
         env_kwargs, start_method=start_method)
 
   def _load_bc_actor(self, path):
-    payload = torch.load(path, map_location='cpu')
+    payload = torch.load(path, map_location='cpu', weights_only=False)
     state = payload.get('actor_state_dict', payload.get('actor', payload))
     self.model.actor.load_state_dict(state)
+    if 'normalizer_mean' in payload and 'normalizer_std' in payload:
+      mean = np.asarray(payload['normalizer_mean'], dtype=np.float64)
+      std = np.asarray(payload['normalizer_std'], dtype=np.float64)
+      std[std < 1e-6] = 1.0
+      self.obs_normalizer.mean = mean
+      self.obs_normalizer.var = np.square(std)
+      self.obs_normalizer.count = float(
+          payload.get('normalizer_count', 10000.0))
 
   def _load_checkpoint(self, path):
     payload = torch.load(path, map_location=self.device)
@@ -170,14 +207,7 @@ class PPOTrainer(object):
         'torch_rng_state': torch.get_rng_state(),
         'cuda_rng_state': (torch.cuda.get_rng_state_all()
                            if torch.cuda.is_available() else None),
-        'config': {
-            'num_envs': self.num_envs,
-            'rollout_steps': self.rollout_steps,
-            'gamma': self.gamma,
-            'gae_lambda': self.gae_lambda,
-            'no_curriculum': self.no_curriculum,
-            'no_potential': self.no_potential,
-        },
+        'config': self.run_config,
     }
     torch.save(payload, path)
 

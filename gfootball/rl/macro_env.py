@@ -1,6 +1,7 @@
 # coding=utf-8
 """Gym environment for low-frequency whole-team tactical decisions."""
 
+import os
 import time
 
 from gfootball.env import config
@@ -27,6 +28,8 @@ class MacroTacticEnv(gym.Env):
                game_duration=3600,
                gamma=0.99,
                use_potential_shaping=True,
+               opponent='builtin',
+               tizero_model_dir='',
                render=False):
     self.seed_value = protocol.validate_seed(seed, split)
     self.split = split
@@ -37,6 +40,11 @@ class MacroTacticEnv(gym.Env):
     self.game_duration = int(game_duration)
     self.gamma = float(gamma)
     self.use_potential_shaping = bool(use_potential_shaping)
+    if opponent not in ('builtin', 'tizero'):
+      raise ValueError('Unknown opponent: {}'.format(opponent))
+    self.opponent = opponent
+    self.tizero_model_dir = os.path.abspath(
+        tizero_model_dir) if tizero_model_dir else ''
     self.render_enabled = bool(render)
     self.action_space = gym.spaces.Discrete(tactics.NUM_TACTICS)
     self.observation_space = gym.spaces.Box(
@@ -51,6 +59,13 @@ class MacroTacticEnv(gym.Env):
     self._episode_return = 0.0
 
   def _make_base_env(self):
+    players = []
+    if self.opponent == 'tizero':
+      if not self.tizero_model_dir:
+        raise ValueError('tizero_model_dir is required for TiZero evaluation')
+      side = 'right_players' if self.control_left else 'left_players'
+      players = ['tizero:{}=11,model_dir={},torch_threads=1'.format(
+          side, self.tizero_model_dir)]
     values = {
         'action_set': 'full',
         'dump_full_episodes': False,
@@ -60,7 +75,7 @@ class MacroTacticEnv(gym.Env):
         'macro_controlled_difficulty': self.controlled_difficulty,
         'macro_game_duration': self.game_duration,
         'macro_opponent_difficulty': self.opponent_difficulty,
-        'players': [],
+        'players': players,
         'real_time': False,
     }
     self._base_env = football_env.FootballEnv(config.Config(values))
@@ -168,12 +183,15 @@ class MacroTacticEnv(gym.Env):
     self._tactic_age_steps += low_level_steps
     self._macro_step += 1
     self._episode_return += reward
+    engine_step_latency_ms = (time.perf_counter() - started_at) * 1000.0
     info = dict(engine_info)
     info.update({
         'action_id': action,
         'action_name': tactics.TACTIC_NAMES[action],
         'control_left': self.control_left,
-        'decision_latency_ms': (time.perf_counter() - started_at) * 1000.0,
+        # Kept for compatibility; policy inference happens outside this env.
+        'decision_latency_ms': engine_step_latency_ms,
+        'engine_step_latency_ms': engine_step_latency_ms,
         'engine_seed': self.seed_value,
         'episode_return': self._episode_return,
         'event': event,
@@ -181,6 +199,7 @@ class MacroTacticEnv(gym.Env):
         'low_level_steps': low_level_steps,
         'macro_step': self._macro_step,
         'opponent_difficulty': self.opponent_difficulty,
+        'opponent': self.opponent,
         'plan': plan,
         'potential_after': final_potential,
         'potential_before': initial_potential,

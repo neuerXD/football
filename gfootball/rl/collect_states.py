@@ -10,6 +10,7 @@ import os
 import numpy as np
 
 from gfootball.rl import protocol
+from gfootball.rl import provenance
 from gfootball.rl import vector_env
 
 
@@ -55,7 +56,8 @@ def choose_action(state, rng, mode):
 
 
 def collect(output_dir, num_states=50000, num_envs=8, seed=17,
-            policy='mixture', macro_steps=100, start_method='spawn'):
+            policy='mixture', macro_steps=100, start_method='spawn',
+            progress_interval=1000):
   output_dir = os.path.abspath(output_dir)
   os.makedirs(output_dir, exist_ok=True)
   rng = np.random.RandomState(seed)
@@ -65,6 +67,7 @@ def collect(output_dir, num_states=50000, num_envs=8, seed=17,
       'control_left': True,
       'opponent_difficulty': 0.4,
       'macro_steps': macro_steps,
+      'provenance': provenance.experiment_metadata(),
       'game_duration': 3600,
       'use_potential_shaping': True,
   } for index in range(num_envs)]
@@ -76,6 +79,7 @@ def collect(output_dir, num_states=50000, num_envs=8, seed=17,
   difficulties = []
   rewards = []
   dones = []
+  next_progress = max(1, int(progress_interval))
   try:
     reset_configs = []
     for _ in range(num_envs):
@@ -106,6 +110,11 @@ def collect(output_dir, num_states=50000, num_envs=8, seed=17,
               'opponent_difficulty': float(rng.choice((0.4, 0.6, 0.8))),
           })
       observations = next_observations
+      if progress_interval > 0 and len(states) >= next_progress:
+        print('collected {}/{}'.format(
+            min(len(states), num_states), num_states), flush=True)
+        while next_progress <= len(states):
+          next_progress += int(progress_interval)
   finally:
     envs.close()
 
@@ -128,6 +137,8 @@ def collect(output_dir, num_states=50000, num_envs=8, seed=17,
                            protocol.TRAIN_ENV_SEEDS[-1]],
       'feature_dim': int(arrays['states'].shape[1]),
       'action_dim': 12,
+      'num_envs': num_envs,
+      'macro_steps': macro_steps,
   }
   with open(os.path.join(output_dir, 'collection_manifest.json'), 'w') as f:
     json.dump(manifest, f, indent=2, sort_keys=True)
@@ -145,6 +156,7 @@ def main():
   parser.add_argument('--macro-steps', type=int, default=100)
   parser.add_argument('--start-method', choices=('spawn', 'fork'),
                       default='spawn')
+  parser.add_argument('--progress-interval', type=int, default=1000)
   args = parser.parse_args()
   print(collect(**vars(args)), flush=True)
 

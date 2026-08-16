@@ -11,6 +11,7 @@ football-env*/
 
 # Local runtime dependencies and evaluation artifacts
 .deps/
+artifacts/
 official_ai_seed*_frames/
 official_ai_seed*_topdown.avi
 

@@ -12,6 +12,7 @@ import torch
 from torch.nn import functional as F
 
 from gfootball.rl import models
+from gfootball.rl import provenance
 
 
 def _accuracy(logits, labels):
@@ -98,6 +99,7 @@ def train_bc(cluster_dir, teacher_dir, output_dir, epochs=50, batch_size=256,
       'actor_state_dict': model.actor.state_dict(),
       'normalizer_mean': mean,
       'normalizer_std': std,
+      'normalizer_count': int(len(cluster['labels'])),
       'class_weights': class_weights,
       'history': history,
       'feature_dim': int(states.shape[1]),
@@ -111,6 +113,7 @@ def train_bc(cluster_dir, teacher_dir, output_dir, epochs=50, batch_size=256,
       'val_size': int(len(val_indices)),
       'test_size': int(len(test_indices)),
       'final': history[-1],
+      'provenance': provenance.experiment_metadata(),
   }
   with open(os.path.join(output_dir, 'bc_metrics.json'), 'w') as f:
     json.dump(metrics, f, indent=2, sort_keys=True)

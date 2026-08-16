@@ -10,6 +10,8 @@ import os
 import numpy as np
 from sklearn.cluster import MiniBatchKMeans
 
+from gfootball.rl import provenance
+
 
 def cluster(input_dir, output_dir, num_clusters=3000, seed=23):
   input_dir = os.path.abspath(input_dir)
@@ -58,6 +60,7 @@ def cluster(input_dir, output_dir, num_clusters=3000, seed=23):
       'num_clusters': int(num_clusters),
       'cluster_seed': seed,
       'feature_dim': int(states.shape[1]),
+      'provenance': provenance.experiment_metadata(),
   }
   with open(os.path.join(output_dir, 'cluster_manifest.json'), 'w') as f:
     json.dump(manifest, f, indent=2, sort_keys=True)
