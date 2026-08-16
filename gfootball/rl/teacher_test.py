@@ -33,3 +33,20 @@ def test_majority_vote_counts_invalid_samples_against_majority():
   ])
   assert label == -1
   assert valid == 1
+
+
+def test_save_progress_is_atomic_and_loadable(tmp_path):
+  import numpy as np
+
+  path = str(tmp_path / 'progress.npz')
+  teacher._save_progress(
+      path,
+      np.asarray([1, -1]),
+      np.asarray([0.9, 0.0]),
+      np.asarray([3, 0]),
+      np.asarray([True, False]),
+  )
+  data = np.load(path)
+  np.testing.assert_array_equal(data['labels'], [1, -1])
+  np.testing.assert_array_equal(data['processed'], [True, False])
+  assert not (tmp_path / 'progress.npz.tmp').exists()

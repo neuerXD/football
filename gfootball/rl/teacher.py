@@ -75,6 +75,7 @@ def _load_model(model_path, quantization):
   tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
   if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
+  tokenizer.padding_side = 'left'
   kwargs = {
       'trust_remote_code': True,
       'device_map': 'auto',
@@ -118,11 +119,24 @@ def _generate_batch(tokenizer, model, prompts, temperature, max_new_tokens):
                                 skip_special_tokens=True)
 
 
+def _save_progress(path, labels, confidences, valid_counts, processed):
+  temporary = path + '.tmp'
+  with open(temporary, 'wb') as output:
+    np.savez_compressed(
+        output,
+        labels=labels,
+        confidence=confidences,
+        valid_samples=valid_counts,
+        processed=processed,
+    )
+  os.replace(temporary, path)
+
+
 def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
                    num_samples=3, batch_size=4, seed=31,
                    confidence_threshold=0.55, temperature=0.7,
                    max_new_tokens=96, mock=False, shard_index=0,
-                   num_shards=1):
+                   num_shards=1, resume=False):
   from gfootball.rl.collect_states import rule_action
 
   output_dir = os.path.abspath(output_dir)
@@ -136,7 +150,6 @@ def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
   cluster_indices = np.arange(
       shard_index, len(all_states), num_shards, dtype=np.int64)
   states = all_states[cluster_indices]
-  rng = np.random.RandomState(seed)
   tokenizer = model = None
   if not mock:
     if not model_path:
@@ -146,14 +159,36 @@ def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
   labels = np.full(len(states), -1, dtype=np.int64)
   confidences = np.zeros(len(states), dtype=np.float32)
   valid_counts = np.zeros(len(states), dtype=np.int8)
-  records = []
-  for start in range(0, len(states), batch_size):
-    stop = min(len(states), start + batch_size)
+  processed = np.zeros(len(states), dtype=bool)
+  progress_path = os.path.join(output_dir, 'teacher_progress.npz')
+  progress_records_path = os.path.join(
+      output_dir, 'teacher_progress.jsonl')
+  records_by_index = {}
+  if resume and os.path.exists(progress_path):
+    progress = np.load(progress_path)
+    if len(progress['labels']) != len(states):
+      raise ValueError('Teacher progress does not match this shard')
+    labels[:] = progress['labels']
+    confidences[:] = progress['confidence']
+    valid_counts[:] = progress['valid_samples']
+    processed[:] = progress['processed']
+    if os.path.exists(progress_records_path):
+      with open(progress_records_path) as progress_records:
+        for line in progress_records:
+          if line.strip():
+            record = json.loads(line)
+            records_by_index[int(record['cluster_index'])] = record
+  elif os.path.exists(progress_path) or os.path.exists(progress_records_path):
+    raise ValueError('Teacher progress exists; pass --resume or use a new dir')
+
+  pending = np.flatnonzero(~processed)
+  for offset in range(0, len(pending), batch_size):
+    local_indices = pending[offset:offset + batch_size]
     prompts = []
     prompt_indices = []
-    for index in range(start, stop):
+    for index in local_indices:
       for sample in range(num_samples):
-        prompt_indices.append(index)
+        prompt_indices.append(int(index))
         prompts.append(build_prompt(states[index]))
     if mock:
       responses = []
@@ -166,7 +201,8 @@ def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
         })
     else:
       import torch
-      torch.manual_seed(seed + shard_index * 100000 + start)
+      torch.manual_seed(
+          seed + shard_index * 100000 + int(local_indices[0]))
       raw_responses = _generate_batch(tokenizer, model, prompts, temperature,
                                       max_new_tokens)
       responses = []
@@ -175,7 +211,8 @@ def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
           responses.append(parse_response(raw))
         except (TypeError, ValueError, KeyError, json.JSONDecodeError):
           responses.append(None)
-    for index in range(start, stop):
+    new_records = []
+    for index in local_indices:
       selected = [
           responses[offset] for offset, item in enumerate(prompt_indices)
           if item == index
@@ -185,14 +222,25 @@ def label_clusters(cluster_dir, output_dir, model_path='', quantization='4bit',
       labels[index] = label
       confidences[index] = confidence
       valid_counts[index] = valid
-      records.append({
+      processed[index] = True
+      record = {
           'cluster_index': int(cluster_indices[index]),
           'action_id': int(label),
           'confidence': confidence,
           'valid_samples': valid,
           'reason': reason,
-      })
-    print('labeled {}/{}'.format(stop, len(states)), flush=True)
+      }
+      records_by_index[record['cluster_index']] = record
+      new_records.append(record)
+    with open(progress_records_path, 'a') as progress_records:
+      for record in new_records:
+        progress_records.write(json.dumps(record, sort_keys=True))
+        progress_records.write('\n')
+    _save_progress(progress_path, labels, confidences, valid_counts, processed)
+    print('labeled {}/{}'.format(int(np.sum(processed)), len(states)),
+          flush=True)
+
+  records = [records_by_index[index] for index in sorted(records_by_index)]
 
   np.savez_compressed(
       os.path.join(output_dir, 'teacher_labels.npz'),
@@ -238,6 +286,7 @@ def main():
   parser.add_argument('--mock', action='store_true')
   parser.add_argument('--shard-index', type=int, default=0)
   parser.add_argument('--num-shards', type=int, default=1)
+  parser.add_argument('--resume', action='store_true')
   args = parser.parse_args()
   print(label_clusters(**vars(args)), flush=True)
 
